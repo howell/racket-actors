@@ -4,6 +4,7 @@
          receive
          monitor
          send!
+         self
          (struct-out exit))
 
 (require (for-syntax syntax/parse))
@@ -51,7 +52,7 @@
 
 ;; PID Any -> Void
 (define (send! pid v)
-  (ensure-effects-available! 'send!)
+  ;; actually want to allow non-actors to send messages
   (send-message! pid (message v)))
 
 (define-syntax (receive stx)
@@ -93,7 +94,11 @@
 ;; PID Message -> Void
 (define (send-message! pid msg)
   ;; TODO - need to worry if destination is dead
-  (thread-send pid msg))
+  (cond
+    [(thread-running? pid)
+     (thread-send pid msg)]
+    [else
+     (printf "tried to send ~a to no-longer running process ~a\n" msg pid)]))
 
 
 ;; PID -> Void
