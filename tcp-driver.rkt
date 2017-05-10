@@ -54,7 +54,7 @@
     (listener-thread local-pid listener)
     (let loop ()
       (receive
-       [(exit (== local-pid) _)
+       [(down (== local-pid) _)
         ;; TODO shutdown listener thread
         (void)]
        [_ (loop)])))))
@@ -105,5 +105,5 @@
         (loop)]
        ['quit
         (shutdown!)]
-       [(exit _ _)
+       [(down _ _)
         (shutdown!)])))))

@@ -5,7 +5,7 @@
          monitor
          send!
          self
-         (struct-out exit))
+         (struct-out down))
 
 (require (for-syntax syntax/parse))
 
@@ -26,7 +26,7 @@
 
 ;; a MetaMessage is one of
 ;;   (add-link PID)
-;;   (exit PID ExitReason)
+;;   (down PID ExitReason)
 
 ;; an ExitReason is one of
 ;;  Exception
@@ -34,7 +34,7 @@
 ;;  'no-proc
 
 (struct add-link (pid) #:transparent)
-(struct exit (pid reason) #:transparent)
+(struct down (pid reason) #:transparent)
 
 ;; #f for when outside of a process
 (define current-actor-state (make-parameter #f))
@@ -78,12 +78,12 @@
                         ;; it seems like sending-a-message-on-exit could race
                         ;; with the just exiting event, so check our mailbox
                         (define m? (thread-try-receive))
-                        (send-message! behalf-pid (or m? (meta (exit subject-pid 'no-proc)))))))
+                        (send-message! behalf-pid (or m? (meta (down subject-pid 'no-proc)))))))
      (handle-evt (thread-receive-evt)
                  (λ e
-                   (define exit-msg (thread-receive))
+                   (define down-msg (thread-receive))
                    (unless (thread-dead? behalf-pid)
-                        (send-message! behalf-pid exit-msg))))))))
+                        (send-message! behalf-pid down-msg))))))))
 
 ;; (Any -> Void) -> Void
 (define (receive-message k)
@@ -94,7 +94,7 @@
       [(meta (add-link pid))
        (add-link! pid)
        (loop)]
-      [(meta (and e (exit pid reason)))
+      [(meta (and e (down pid reason)))
        (k e)]
       [(message v)
        (k v)])))
@@ -109,7 +109,7 @@
   (match-define (actor-state my-pid _ links) (current-actor-state))
   (for ([pid (in-list links)])
     (unless (thread-dead? pid)
-      (send-message! pid (meta (exit my-pid reason))))))
+      (send-message! pid (meta (down my-pid reason))))))
 
 ;; PID Message -> Void
 (define (send-message! pid msg)
@@ -179,7 +179,7 @@
         (sleep .1)
         (send! doomed-actor 'crash)
         (receive
-         [(exit pid reason)
+         [(down pid reason)
           (set! crash-pid pid)
           (set! crash-reason reason)]))))
 
@@ -208,7 +208,7 @@
         (sleep .1)
         (send! doomed-actor 'crash)
         (receive
-         [(exit pid reason)
+         [(down pid reason)
           (set! crash-pid pid)
           (set! crash-reason reason)]))))
     

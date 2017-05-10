@@ -34,7 +34,7 @@
          [(speak who what)
           (announce members (format "~a: ~a\n" who what))
           (loop members)]
-         [(exit pid _)
+         [(down pid _)
           (cond
             [(hash-has-key? members pid)
              (define username (hash-ref members pid))
