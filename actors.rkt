@@ -31,6 +31,7 @@
 ;; an ExitReason is one of
 ;;  Exception
 ;;  'normal
+;;  'no-proc
 
 (struct add-link (pid) #:transparent)
 (struct exit (pid reason) #:transparent)
@@ -63,8 +64,26 @@
 ;; PID -> Void
 (define (monitor pid)
   (ensure-effects-available! 'monitor)
-  (define our-pid (actor-state-pid (current-actor-state)))
-  (send-message! pid (meta (add-link our-pid))))
+  (spawn-monitoring-thread (self) pid))
+
+;; PID PID -> PID
+(define (spawn-monitoring-thread behalf-pid subject-pid)
+  (spawn
+   (thunk
+    (send-message! subject-pid (meta (add-link (self))))
+    (sync
+     (thread-dead-evt behalf-pid)
+     (handle-evt (thread-dead-evt subject-pid)
+                 (λ e (unless (thread-dead? behalf-pid)
+                        ;; it seems like sending-a-message-on-exit could race
+                        ;; with the just exiting event, so check our mailbox
+                        (define m? (thread-try-receive))
+                        (send-message! behalf-pid (or m? (meta (exit subject-pid 'no-proc)))))))
+     (handle-evt (thread-receive-evt)
+                 (λ e
+                   (define exit-msg (thread-receive))
+                   (unless (thread-dead? behalf-pid)
+                        (send-message! behalf-pid exit-msg))))))))
 
 ;; (Any -> Void) -> Void
 (define (receive-message k)
@@ -89,7 +108,8 @@
 (define (exit! reason)
   (match-define (actor-state my-pid _ links) (current-actor-state))
   (for ([pid (in-list links)])
-    (send-message! pid (meta (exit my-pid reason)))))
+    (unless (thread-dead? pid)
+      (send-message! pid (meta (exit my-pid reason))))))
 
 ;; PID Message -> Void
 (define (send-message! pid msg)
@@ -155,6 +175,8 @@
       (spawn
        (thunk
         (monitor doomed-actor)
+        ;; allow the monitor to get going
+        (sleep .1)
         (send! doomed-actor 'crash)
         (receive
          [(exit pid reason)
@@ -182,6 +204,8 @@
       (spawn
        (thunk
         (monitor doomed-actor)
+        ;; allow the monitor to get going
+        (sleep .1)
         (send! doomed-actor 'crash)
         (receive
          [(exit pid reason)
