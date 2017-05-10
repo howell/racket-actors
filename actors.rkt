@@ -12,9 +12,8 @@
 (module+ test
   (require rackunit))
 
-;; an ActorState is a (actor-state PID (Queueof Message) (Listof PID))
-;; (for now a queue is a list)
-(struct actor-state (pid mailbox links))
+;; an ActorState is a (actor-state PID (Listof PID))
+(struct actor-state (pid links))
 
 ;; a PID is a Thread
 
@@ -45,7 +44,7 @@
     (thread
      (thunk
       (define my-pid (current-thread))
-      (current-actor-state (actor-state my-pid '() '()))
+      (current-actor-state (actor-state my-pid '()))
       (with-handlers ([(const #t) (lambda (e) (displayln e) (exit! e))])
         (thnk)
         (exit! 'normal)))))
@@ -88,7 +87,7 @@
 ;; (Any -> Void) -> Void
 (define (receive-message k)
   (ensure-effects-available! 'receive)
-  (match-define (actor-state _ msgs links) (current-actor-state))
+  (match-define (actor-state _ links) (current-actor-state))
   (let loop ()
     (match (thread-receive)
       [(meta (add-link pid))
@@ -106,7 +105,7 @@
 
 ;; ExitReason -> Void
 (define (exit! reason)
-  (match-define (actor-state my-pid _ links) (current-actor-state))
+  (match-define (actor-state my-pid links) (current-actor-state))
   (for ([pid (in-list links)])
     (unless (thread-dead? pid)
       (send-message! pid (meta (down my-pid reason))))))
