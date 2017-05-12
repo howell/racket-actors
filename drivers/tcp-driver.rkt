@@ -10,7 +10,7 @@
          (struct-out tcp-read-line)
          (struct-out tcp-input))
 
-(require "actors.rkt")
+(require "../actors.rkt")
 
 (require (prefix-in tcp: racket/tcp))
 (require racket/async-channel)

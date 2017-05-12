@@ -1,7 +1,7 @@
 #lang racket
 
 (require "actors.rkt")
-(require "tcp-driver.rkt")
+(require "drivers/tcp-driver.rkt")
 
 (define HOST "localhost")
 (define PORT 5998)
