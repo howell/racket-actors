@@ -35,29 +35,27 @@
 
 (define (spawn-tcp-driver)
   (spawn
-   (thunk
-    (let loop ()
-      (receive
-       [(tcp-listen-on pid host port)
-        (spawn-listener pid host port)
-        (loop)]
-       [(tcp-connect-to pid host port)
-        (define-values (in-p out-p) (tcp:tcp-connect host port))
-        (spawn-client-actor pid in-p out-p)])))))
+   (let loop ()
+     (receive
+      [(tcp-listen-on pid host port)
+       (spawn-listener pid host port)
+       (loop)]
+      [(tcp-connect-to pid host port)
+       (define-values (in-p out-p) (tcp:tcp-connect host port))
+       (spawn-client-actor pid in-p out-p)]))))
 
 (define (spawn-listener local-pid host port)
   (spawn
-   (thunk
-    (monitor local-pid)
-    (send! local-pid (tcp-open-listener (self)))
-    (define listener (tcp:tcp-listen port 128 #t host))
-    (listener-thread local-pid listener)
-    (let loop ()
-      (receive
-       [(down (== local-pid) _)
-        ;; TODO shutdown listener thread
-        (void)]
-       [_ (loop)])))))
+   (monitor local-pid)
+   (send! local-pid (tcp-open-listener (self)))
+   (define listener (tcp:tcp-listen port 128 #t host))
+   (listener-thread local-pid listener)
+   (let loop ()
+     (receive
+      [(down (== local-pid) _)
+       ;; TODO shutdown listener thread
+       (void)]
+      [_ (loop)]))))
 
 (define (listener-thread local-pid listener)
   (thread
@@ -89,21 +87,20 @@
     (close-output-port out-p)
     (close-input-port in-p))
   (spawn
-   (thunk
-    (monitor local-pid)
-    (send! local-pid (tcp-new-connection (self)))
-    (define control-ch (make-async-channel))
-    (tcp-input-thread control-ch in-p (self))
-    (let loop ()
-      (receive
-       [(tcp-write bs)
-        (write-string bs out-p)
-        (flush-output out-p)
-        (loop)]
-       [(and instr (tcp-read-line resp-pid))
-        (async-channel-put control-ch instr)
-        (loop)]
-       ['quit
-        (shutdown!)]
-       [(down _ _)
-        (shutdown!)])))))
+   (monitor local-pid)
+   (send! local-pid (tcp-new-connection (self)))
+   (define control-ch (make-async-channel))
+   (tcp-input-thread control-ch in-p (self))
+   (let loop ()
+     (receive
+      [(tcp-write bs)
+       (write-string bs out-p)
+       (flush-output out-p)
+       (loop)]
+      [(and instr (tcp-read-line resp-pid))
+       (async-channel-put control-ch instr)
+       (loop)]
+      ['quit
+       (shutdown!)]
+      [(down _ _)
+       (shutdown!)]))))

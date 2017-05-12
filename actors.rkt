@@ -39,7 +39,7 @@
 (define current-actor-state (make-parameter #f))
 
 ;; (-> Void) -> PID
-(define (spawn thnk)
+(define (spawn-thunk thnk)
   (define the-thread
     (thread
      (thunk
@@ -49,6 +49,9 @@
         (thnk)
         (exit! 'normal)))))
   the-thread)
+
+(define-syntax-rule (spawn body ...)
+  (spawn-thunk (thunk body ...)))
 
 ;; PID Any -> Void
 (define (send! pid v)
@@ -68,21 +71,20 @@
 ;; PID PID -> PID
 (define (spawn-monitoring-thread behalf-pid subject-pid)
   (spawn
-   (thunk
-    (send-message! subject-pid (meta (add-link (self))))
-    (sync
-     (thread-dead-evt behalf-pid)
-     (handle-evt (thread-dead-evt subject-pid)
-                 (λ e (unless (thread-dead? behalf-pid)
-                        ;; it seems like sending-a-message-on-exit could race
-                        ;; with the just exiting event, so check our mailbox
-                        (define m? (thread-try-receive))
-                        (send-message! behalf-pid (or m? (meta (down subject-pid 'no-proc)))))))
-     (handle-evt (thread-receive-evt)
-                 (λ e
-                   (define down-msg (thread-receive))
-                   (unless (thread-dead? behalf-pid)
-                        (send-message! behalf-pid down-msg))))))))
+   (send-message! subject-pid (meta (add-link (self))))
+   (sync
+    (thread-dead-evt behalf-pid)
+    (handle-evt (thread-dead-evt subject-pid)
+                (λ e (unless (thread-dead? behalf-pid)
+                       ;; it seems like sending-a-message-on-exit could race
+                       ;; with the just exiting event, so check our mailbox
+                       (define m? (thread-try-receive))
+                       (send-message! behalf-pid (or m? (meta (down subject-pid 'no-proc)))))))
+    (handle-evt (thread-receive-evt)
+                (λ e
+                  (define down-msg (thread-receive))
+                  (unless (thread-dead? behalf-pid)
+                    (send-message! behalf-pid down-msg)))))))
 
 ;; (Any -> Void) -> Void
 (define (receive-message k)
@@ -140,20 +142,18 @@
 
     (define ping-actor
       (spawn
-       (thunk
-        (receive
-         [`(ping ,pid)
-          (displayln 'pong)
-          (send! pid `(pong ,(self)))]))))
+       (receive
+        [`(ping ,pid)
+         (displayln 'pong)
+         (send! pid `(pong ,(self)))])))
 
     (define pong-actor
       (spawn
-       (thunk
-        (displayln 'ping)
-        (send! ping-actor `(ping, (self)))
-        (receive
-         [`(pong ,pid)
-          (set! ping-pong-test-succeeded? #t)]))))
+       (displayln 'ping)
+       (send! ping-actor `(ping, (self)))
+       (receive
+        [`(pong ,pid)
+         (set! ping-pong-test-succeeded? #t)])))
 
     (thread-wait pong-actor)
     (check-true ping-pong-test-succeeded?)))
@@ -165,22 +165,20 @@
     ;; test monitoring
     (define doomed-actor
       (spawn
-       (thunk
-        (receive
-         ['crash
-          (raise 'FIRE)]))))
+       (receive
+        ['crash
+         (raise 'FIRE)])))
 
     (define monitoring-actor
       (spawn
-       (thunk
-        (monitor doomed-actor)
-        ;; allow the monitor to get going
-        (sleep .1)
-        (send! doomed-actor 'crash)
-        (receive
-         [(down pid reason)
-          (set! crash-pid pid)
-          (set! crash-reason reason)]))))
+       (monitor doomed-actor)
+       ;; allow the monitor to get going
+       (sleep .1)
+       (send! doomed-actor 'crash)
+       (receive
+        [(down pid reason)
+         (set! crash-pid pid)
+         (set! crash-reason reason)])))
 
     (thread-wait monitoring-actor)
     (check-eq? crash-pid doomed-actor)
@@ -194,22 +192,20 @@
     ;; test monitoring
     (define doomed-actor
       (spawn
-       (thunk
-        (receive
-         ['crash
-          (void)]))))
+       (receive
+        ['crash
+         (void)])))
 
     (define monitoring-actor
       (spawn
-       (thunk
-        (monitor doomed-actor)
-        ;; allow the monitor to get going
-        (sleep .1)
-        (send! doomed-actor 'crash)
-        (receive
-         [(down pid reason)
-          (set! crash-pid pid)
-          (set! crash-reason reason)]))))
+       (monitor doomed-actor)
+       ;; allow the monitor to get going
+       (sleep .1)
+       (send! doomed-actor 'crash)
+       (receive
+        [(down pid reason)
+         (set! crash-pid pid)
+         (set! crash-reason reason)])))
     
     (thread-wait monitoring-actor)
     (check-eq? crash-pid doomed-actor)
