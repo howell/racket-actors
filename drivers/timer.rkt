@@ -34,7 +34,8 @@
   (thread
    (thunk
     (sync (alarm-evt ms))
-    (send! pid (timer-expired tag)))))
+    (unless (thread-dead? pid)
+      (send! pid (timer-expired tag))))))
 
 (module+ test
   (define driver (spawn-timer-driver))
