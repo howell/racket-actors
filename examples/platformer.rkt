@@ -252,6 +252,9 @@
        (define vx (- (if right-down? dx 0)
                      (if left-down? dx 0)))
        (send! game-logic (move-x player-id (self) vx))
+       ;; if we can't jump, we lose a step of vertical motion. d'oh!
+       ;; but I tried holding down the spacebar and it doesn't seem to
+       ;; make much difference. phew!
        (unless pending-jump?
          (send! game-logic (move-y player-id (self) vy)))
        (define vy-new (min (+ vy gravity) EFFECTIVE-TERMINAL-VELOCITY))
