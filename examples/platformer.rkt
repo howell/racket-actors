@@ -607,9 +607,6 @@
   (define renderer (spawn-renderer dc))
   (spawn-level-manager ALL-LEVELS game-clock renderer keyboard-driver))
 
-(module+ main
-  (run-the-game))
-
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Level Data
 
