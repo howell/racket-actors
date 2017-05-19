@@ -12,39 +12,25 @@
 (module+ test
   (require rackunit))
 
-;; an ActorState is a (actor-state PID (Listof PID))
-(struct actor-state (pid links))
-
 ;; a PID is a Thread
-
-;; a Message is one of
-;;  (meta MetaMessage)
-;;  (message Any), for application messages created with send!
-(struct meta (msg) #:transparent)
-(struct message (v) #:transparent)
-
-;; a MetaMessage is one of
-;;   (add-link PID)
-;;   (down PID ExitReason)
 
 ;; an ExitReason is one of
 ;;  Exception
 ;;  'normal
 ;;  'no-proc
 
-(struct add-link (pid) #:transparent)
+;; Sent to the monitor when the monitor-ee exits
 (struct down (pid reason) #:transparent)
 
-;; #f for when outside of a process
-(define current-actor-state (make-parameter #f))
+;; (Hashof PID ExitReason)
+(define exit-reasons
+  (make-weak-hash))
 
 ;; (-> Void) -> PID
 (define (spawn-thunk thnk)
   (define the-thread
     (thread
      (thunk
-      (define my-pid (current-thread))
-      (current-actor-state (actor-state my-pid '()))
       (with-handlers ([(const #t) (lambda (e) (displayln e) (exit! e))])
         (thnk)
         (exit! 'normal)))))
@@ -56,7 +42,11 @@
 ;; PID Any -> Void
 (define (send! pid v)
   ;; actually want to allow non-actors to send messages
-  (send-message! pid (message v)))
+  (cond
+    [(thread-running? pid)
+     (thread-send pid v)]
+    [else
+     (printf "tried to send ~a to no-longer running process ~a\n" v pid)]))
 
 (define-syntax (receive stx)
   (syntax-parse stx
@@ -65,75 +55,30 @@
 
 ;; PID -> Void
 (define (monitor pid)
-  (ensure-effects-available! 'monitor)
   (spawn-monitoring-thread (self) pid))
 
 ;; PID PID -> PID
 (define (spawn-monitoring-thread behalf-pid subject-pid)
   (spawn
-   (send-message! subject-pid (meta (add-link (self))))
    (sync
     (thread-dead-evt behalf-pid)
-    (handle-evt (thread-dead-evt subject-pid)
-                (λ e (unless (thread-dead? behalf-pid)
-                       ;; it seems like sending-a-message-on-exit could race
-                       ;; with the just exiting event, so check our mailbox
-                       (define m? (thread-try-receive))
-                       (send-message! behalf-pid (or m? (meta (down subject-pid 'no-proc)))))))
-    (handle-evt (thread-receive-evt)
-                (λ e
-                  (define down-msg (thread-receive))
-                  (unless (thread-dead? behalf-pid)
-                    (send-message! behalf-pid down-msg)))))))
+    (handle-evt
+     (thread-dead-evt subject-pid)
+     (λ e (unless (thread-dead? behalf-pid)
+            (define reason (hash-ref exit-reasons subject-pid 'no-proc))
+            (send! behalf-pid (down subject-pid reason))))))))
 
 ;; (Any -> Void) -> Void
 (define (receive-message k)
-  (ensure-effects-available! 'receive)
-  (match-define (actor-state _ links) (current-actor-state))
-  (let loop ()
-    (match (thread-receive)
-      [(meta (add-link pid))
-       (add-link! pid)
-       (loop)]
-      [(meta (and e (down pid reason)))
-       (k e)]
-      [(message v)
-       (k v)])))
-
-;; Symbol -> Void
-(define (ensure-effects-available! loc)
-  (unless (current-actor-state)
-    (error loc "not available outside an actor")))
+  (k (thread-receive)))
 
 ;; ExitReason -> Void
 (define (exit! reason)
-  (match-define (actor-state my-pid links) (current-actor-state))
-  (for ([pid (in-list links)])
-    (unless (thread-dead? pid)
-      (send-message! pid (meta (down my-pid reason))))))
-
-;; PID Message -> Void
-(define (send-message! pid msg)
-  ;; TODO - need to worry if destination is dead
-  (cond
-    [(thread-running? pid)
-     (thread-send pid msg)]
-    [else
-     (printf "tried to send ~a to no-longer running process ~a\n" msg pid)]))
-
-
-;; PID -> Void
-;; private, no need to ensure effects available
-(define (add-link! pid)
-  (define current (current-actor-state))
-  (current-actor-state (struct-copy actor-state
-                                    current
-                                    [links (cons pid (actor-state-links current))])))
+  (hash-set! exit-reasons (self) reason))
 
 ;; -> PID
 (define (self)
-  (ensure-effects-available! 'self)
-  (actor-state-pid (current-actor-state)))
+  (current-thread))
 
 (module+ test
   ;; test basic message exchange with ping/pong
